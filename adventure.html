@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Lost Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #gameCanvas { position: relative; width: 600px; height: 400px; background: rgb(34, 139, 34); /* Jungle green */ }
+    .sprite { position: absolute; }
+    .sage { width: 50px; height: 80px; background: rgb(139, 69, 19); } /* Brown for sage's robe */
+    .treasure { width: 40px; height: 40px; background: rgb(255, 215, 0); } /* Gold for treasure */
+    .player { width: 30px; height: 50px; background: rgb(0, 0, 255); } /* Blue for player */
+  </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+  <div class="container mx-auto p-4 max-w-3xl">
+    <h1 class="text-3xl font-bold text-center mb-4">The Lost Explorer</h1>
+    <div id="gameCanvas" class="mx-auto mb-4 rounded-lg shadow-lg"></div>
+    <div id="story" class="bg-gray-800 p-6 rounded-lg shadow-lg mb-4"></div>
+    <div id="choices" class="flex flex-col gap-2"></div>
+    <button id="restart" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded hidden">Restart Adventure</button>
+  </div>
+  <script>
+    const storyData = {
+      start: {
+        text: "In the dense jungle of Eldoria, you seek the Temple of Zorath. You encounter a wise sage standing by a glowing treasure. He offers guidance. What do you say?",
+        choices: [
+          { text: "Ask about the temple", next: "ask_temple" },
+          { text: "Inquire about the treasure", next: "ask_treasure" }
+        ],
+        sprites: [
+          { class: "sage", x: 100, y: 300, z: 2 },
+          { class: "treasure", x: 200, y: 320, z: 1 },
+          { class: "player", x: 50, y: 310, z: 3 }
+        ]
+      },
+      ask_temple: {
+        text: "The sage says, 'The temple lies beyond the river, but danger awaits. Trust me, and I’ll give you a map.' Do you trust him?",
+        choices: [
+          { text: "Trust the sage", next: "trust_sage" },
+          { text: "Distrust and walk away", next: "distrust_sage" },
+          { text: "Ask more questions", next: "start" } // Loops back
+        ],
+        sprites: [
+          { class: "sage", x: 100, y: 300, z: 2 },
+          { class: "treasure", x: 200, y: 320, z: 1 },
+          { class: "player", x: 50, y: 310, z: 3 }
+        ]
+      },
+      ask_treasure: {
+        text: "The sage warns, 'The treasure is cursed! Take it, and you’ll never find the temple.' Do you take it?",
+        choices: [
+          { text: "Take the treasure", next: "take_treasure" },
+          { text: "Leave it and ask about the temple", next: "ask_temple" }
+        ],
+        sprites: [
+          { class: "sage", x: 100, y: 300, z: 2 },
+          { class: "treasure", x: 200, y: 320, z: 1 },
+          { class: "player", x: 50, y: 310, z: 3 }
+        ]
+      },
+      trust_sage: {
+        text: "The sage hands you a map to the Temple of Zorath. You follow it and find the temple’s golden statue. You win!",
+        choices: [],
+        sprites: [
+          { class: "treasure", x: 300, y: 200, z: 1 }, // Golden statue
+          { class: "player", x: 250, y: 210, z: 2 }
+        ]
+      },
+      distrust_sage: {
+        text: "You walk away, but without the sage’s map, you get lost in the jungle. Your adventure ends.",
+        choices: [],
+        sprites: [
+          { class: "player", x: 300, y: 300, z: 1 }
+        ]
+      },
+      take_treasure: {
+        text: "You take the treasure, but a curse traps you in the jungle forever. Your adventure ends.",
+        choices: [],
+        sprites: [
+          { class: "treasure", x: 200, y: 320, z: 1 },
+          { class: "player", x: 190, y: 310, z: 2 }
+        ]
+      }
+    };
+
+    let currentScene = "start";
+
+    function displayScene(sceneKey) {
+      const scene = storyData[sceneKey];
+      document.getElementById("story").innerText = scene.text;
+      const choicesDiv = document.getElementById("choices");
+      choicesDiv.innerHTML = "";
+      const canvas = document.getElementById("gameCanvas");
+      canvas.innerHTML = "";
+
+      // Render sprites
+      scene.sprites.forEach(sprite => {
+        const div = document.createElement("div");
+        div.className = `sprite ${sprite.class}`;
+        div.style.left = `${sprite.x}px`;
+        div.style.top = `${sprite.y}px`;
+        div.style.zIndex = sprite.z;
+        canvas.appendChild(div);
+      });
+
+      if (scene.choices.length === 0) {
+        document.getElementById("restart").classList.remove("hidden");
+      } else {
+        scene.choices.forEach(choice => {
+          const button = document.createElement("button");
+          button.innerText = choice.text;
+          button.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "font-bold", "py-2", "px-4", "rounded");
+          button.onclick = () => displayScene(choice.next);
+          choicesDiv.appendChild(button);
+        });
+      }
+    }
+
+    document.getElementById("restart").onclick = () => {
+      currentScene = "start";
+      document.getElementById("restart").classList.add("hidden");
+      displayScene(currentScene);
+    };
+
+    // Start the game
+    displayScene(currentScene);
+  </script>
+</body>
+</html>
