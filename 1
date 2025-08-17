@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Lost Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #gameCanvas { position: relative; width: 600px; height: 400px; background: rgb(34, 139, 34); border: 4px solid #000; }
+    #inventoryScreen { display: none; background: rgb(0, 0, 0); color: white; padding: 20px; }
+    .item { display: flex; align-items: center; margin-bottom: 10px; }
+    canvas { position: absolute; }
+  </style>
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen">
+  <div class="container mx-auto p-4 max-w-3xl">
+    <h1 class="text-3xl font-bold text-center mb-4">The Lost Explorer</h1>
+    <div id="gameCanvas" class="mx-auto mb-4 rounded-lg shadow-lg"></div>
+    <button id="inventoryButton" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mb-4">View Inventory</button>
+    <div id="inventoryScreen" class="bg-gray-800 p-6 rounded-lg shadow-lg mb-4"></div>
+    <div id="story" class="bg-gray-800 p-6 rounded-lg shadow-lg mb-4"></div>
+    <div id="choices" class="flex flex-col gap-2"></div>
+    <button id="restart" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded hidden">Restart Adventure</button>
+  </div>
+  <script>
+    let playerState = { inventory: [], trustPoints: 0 };
+    let animationFrame;
+
+    const storyData = {
+      start: {
+        text: "In Eldoria’s jungle, you seek the Temple of Zorath. A guide named Pippa stands by a glowing treasure. She offers guidance. What do you say?",
+        choices: [
+          { text: "Ask about the temple", next: "ask_temple" },
+          { text: "Inquire about her scroll", next: "guide_quest" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Pippa", class: "hamtaro", x: 100, y: 300, z: 2 },
+          { name: "Treasure", class: "treasure", x: 200, y: 320, z: 1 }
+        ]
+      },
+      guide_quest: {
+        text: "Pippa says, 'I lost my sacred scroll in the ruins. Find it, and I’ll guide you.' Accept her quest?",
+        choices: [
+          { text: "Accept quest", next: "ruins_search", effect: { trustPoints: 1 } },
+          { text: "Decline and ask about temple", next: "ask_temple" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Pippa", class: "hamtaro", x: 100, y: 300, z: 2 }
+        ]
+      },
+      ask_temple: {
+        text: "Pippa says, 'The temple is across the river. Trust me for a map.' Trust her?",
+        choices: [
+          { text: "Trust Pippa", next: "trust_guide", effect: { trustPoints: 1, inventory: "map" } },
+          { text: "Distrust and explore alone", next: "explore_alone" },
+          { text: "Ask about scroll", next: "guide_quest" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Pippa", class: "hamtaro", x: 100, y: 300, z: 2 }
+        ]
+      },
+      explore_alone: {
+        text: "You leave Pippa and reach a river. A trickster named Sans appears, demanding a duel for a relic. Fight or negotiate?",
+        choices: [
+          { text: "Fight Sans", next: "fight_sans" },
+          { text: "Negotiate", next: "negotiate_sans", effect: { trustPoints: 1 } }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Sans", class: "sans_classic", x: 300, y: 310, z: 2 }
+        ]
+      },
+      fight_sans: {
+        text: "You fight Sans but lose. He takes your gear. Trust points save you, reverting to the river. Try again?",
+        choices: [
+          { text: "Try again", next: "explore_alone", effect: { trustPoints: -1 } },
+          { text: "Give up", next: "game_over" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Sans", class: "sans_classic", x: 300, y: 310, z: 2 }
+        ],
+        gameOver: true
+      },
+      negotiate_sans: {
+        text: "Sans agrees to share the relic if you find his lost bone in the ruins. Accept his quest?",
+        choices: [
+          { text: "Accept quest", next: "ruins_search", effect: { trustPoints: 1 } },
+          { text: "Decline and cross river", next: "cross_river" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Sans", class: "sans_classic", x: 300, y: 310, z: 2 }
+        ]
+      },
+      cross_river: {
+        text: "You cross the river via a rickety bridge. A guardian named Blue Sans demands an offering. Offer an item or fight?",
+        choices: [
+          { text: "Offer item", next: "offer_item", condition: { inventory: "scroll" } },
+          { text: "Fight Blue Sans", next: "fight_blue_sans" },
+          { text: "Run back", next: "explore_alone" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Blue Sans", class: "sans_blue", x: 200, y: 300, z: 2 }
+        ]
+      },
+      offer_item: {
+        text: "Blue Sans accepts the scroll, granting you safe passage to the ruins. You proceed.",
+        choices: [
+          { text: "Enter ruins", next: "ruins_entry", effect: { inventory: "-scroll" } }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Blue Sans", class: "sans_blue", x: 200, y: 300, z: 2 }
+        ]
+      },
+      fight_blue_sans: {
+        text: "You fight Blue Sans but are overwhelmed. Trust points save you, reverting to the river. Try again?",
+        choices: [
+          { text: "Try again", next: "cross_river", effect: { trustPoints: -1 } },
+          { text: "Give up", next: "game_over" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Blue Sans", class: "sans_blue", x: 200, y: 300, z: 2 }
+        ],
+        gameOver: true
+      },
+      ruins_search: {
+        text: "In the ruins, you find Pippa’s scroll and Sans’ bone behind traps. Take one or both?",
+        choices: [
+          { text: "Take scroll", next: "take_scroll", effect: { inventory: "scroll" } },
+          { text: "Take bone", next: "take_bone", effect: { inventory: "bone" } },
+          { text: "Take both", next: "take_both", effect: { inventory: ["scroll", "bone"] } }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Scroll", class: "scroll", x: 200, y: 320, z: 1 },
+          { name: "Bone", class: "bone", x: 250, y: 320, z: 1 }
+        ]
+      },
+      take_scroll: {
+        text: "You take the scroll. Return it to Pippa or keep exploring?",
+        choices: [
+          { text: "Return to Pippa", next: "return_scroll", effect: { trustPoints: 1 } },
+          { text: "Explore ruins", next: "ruins_entry" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 }
+        ]
+      },
+      take_bone: {
+        text: "You take the bone. Return it to Sans or keep exploring?",
+        choices: [
+          { text: "Return to Sans", next: "return_bone", effect: { trustPoints: 1 } },
+          { text: "Explore ruins", next: "ruins_entry" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 }
+        ]
+      },
+      take_both: {
+        text: "You take both items but trigger a trap! Trust points save you, reverting to ruins. Try again?",
+        choices: [
+          { text: "Try again", next: "ruins_search", effect: { trustPoints: -1 } },
+          { text: "Give up", next: "game_over" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Trap", class: "trap", x: 250, y: 350, z: 1 }
+        ],
+        gameOver: true
+      },
+      return_scroll: {
+        text: "Pippa thanks you, giving a map. You head to the temple.",
+        choices: [
+          { text: "Follow map", next: "temple_entry", effect: { inventory: ["map", "-scroll"] } }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Pippa", class: "hamtaro", x: 100, y: 300, z: 2 }
+        ]
+      },
+      return_bone: {
+        text: "Sans shares the relic, boosting your strength. You head to the temple.",
+        choices: [
+          { text: "Enter temple", next: "temple_entry", effect: { inventory: ["relic", "-bone"] } }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Sans", class: "sans_classic", x: 300, y: 310, z: 2 }
+        ]
+      },
+      ruins_entry: {
+        text: "The ruins hide the temple’s entrance. Solve a puzzle or search for treasure?",
+        choices: [
+          { text: "Solve puzzle", next: "puzzle", condition: { inventory: "map" } },
+          { text: "Search for treasure", next: "treasure_trap" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 }
+        ]
+      },
+      puzzle: {
+        text: "Using the map, you solve the puzzle and find the temple entrance.",
+        choices: [
+          { text: "Enter temple", next: "temple_entry" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 }
+        ]
+      },
+      treasure_trap: {
+        text: "Greed triggers a spike trap! Game over unless trust points remain.",
+        choices: [
+          { text: "Try again", next: "ruins_entry", effect: { trustPoints: -1 } },
+          { text: "Give up", next: "game_over" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Trap", class: "trap", x: 250, y: 350, z: 1 }
+        ],
+        gameOver: true
+      },
+      temple_entry: {
+        text: "You reach the Temple of Zorath. A statue glows. Take it or leave it?",
+        choices: [
+          { text: "Take statue", next: "take_statue", condition: { inventory: "relic" } },
+          { text: "Leave it", next: "leave_temple" }
+        ],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Statue", class: "statue", x: 300, y: 200, z: 1 }
+        ]
+      },
+      take_statue: {
+        text: "The relic protects you. You claim the statue and win!",
+        choices: [],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 },
+          { name: "Statue", class: "statue", x: 300, y: 200, z: 1 }
+        ]
+      },
+      leave_temple: {
+        text: "You leave empty-handed but alive. Your adventure ends.",
+        choices: [],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 }
+        ]
+      },
+      game_over: {
+        text: "No trust points remain. Your adventure ends in failure.",
+        choices: [],
+        sprites: [
+          { name: "You", class: "yoshi", x: 50, y: 310, z: 3 }
+        ]
+      }
+    };
+
+    const inventoryItems = {
+      map: { description: "A tattered map to the Temple of Zorath.", sprite: "map" },
+      scroll: { description: "Pippa’s sacred scroll, glowing faintly.", sprite: "scroll" },
+      bone: { description: "Sans’ lost bone, etched with magic.", sprite: "bone" },
+      relic: { description: "A protective relic shared by Sans.", sprite: "relic" }
+    };
+
+    function drawSprite(ctx, sprite, frame) {
+      ctx.save();
+      ctx.translate(sprite.x, sprite.y + Math.sin(frame / 10) * 5); // Bounce animation
+
+      if (sprite.class === "yoshi") { // Player (You)
+        // Outline
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black outline
+        ctx.fillRect(0, 0, 32, 52); // Larger outline box
+        ctx.fillRect(2, 2, 28, 48); // Inner outline
+        // Body
+        ctx.fillStyle = "rgb(0, 128, 0)"; // Green body
+        ctx.fillRect(4, 12, 24, 36); // Main body
+        ctx.fillStyle = "rgb(144, 238, 144)"; // Light green shading
+        ctx.fillRect(6, 14, 20, 32); // Shaded body
+        // Underbelly
+        ctx.fillStyle = "rgb(255, 245, 238)"; // Off-white underbelly
+        ctx.fillRect(10, 20, 12, 20); // Underbelly
+        // Spikes
+        ctx.fillStyle = "rgb(255, 69, 0)"; // Orange spikes
+        ctx.fillRect(12, 2, 8, 8); ctx.fillRect(14, 6, 8, 8); // Spikes with depth
+        ctx.fillStyle = "rgb(255, 165, 0)"; // Darker orange shading
+        ctx.fillRect(14, 4, 6, 6); ctx.fillRect(16, 8, 6, 6);
+        // Eyes
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White eyes
+        ctx.fillRect(8, 16, 6, 6); ctx.fillRect(18, 16, 6, 6);
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black pupils
+        ctx.fillRect(10, 18, 2, 2); ctx.fillRect(20, 18, 2, 2);
+        // Boots
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black boots
+        ctx.fillRect(8, 48, 8, 8); ctx.fillRect(16, 48, 8, 8);
+        ctx.fillStyle = "rgb(105, 105, 105)"; // Gray shading
+        ctx.fillRect(10, 50, 4, 4); ctx.fillRect(18, 50, 4, 4);
+
+      } else if (sprite.class === "hamtaro") { // Guide (Pippa)
+        // Outline
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black outline
+        ctx.fillRect(0, 0, 52, 52); // Larger outline box
+        ctx.fillRect(2, 2, 48, 48); // Inner outline
+        // Ears and Cheeks
+        ctx.fillStyle = "rgb(255, 182, 193)"; // Pink ears/cheeks
+        ctx.fillRect(12, 2, 28, 18); // Ears
+        ctx.fillRect(16, 42, 20, 8); // Cheeks
+        ctx.fillStyle = "rgb(255, 105, 180)"; // Darker pink shading
+        ctx.fillRect(14, 4, 24, 14); ctx.fillRect(18, 44, 16, 4);
+        // Body
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White body
+        ctx.fillRect(4, 20, 44, 22); // Main body
+        ctx.fillStyle = "rgb(240, 240, 240)"; // Light gray shading
+        ctx.fillRect(6, 22, 40, 18);
+        // Eyes
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black eyes
+        ctx.fillRect(16, 26, 6, 6); ctx.fillRect(30, 26, 6, 6);
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White shine
+        ctx.fillRect(18, 28, 2, 2); ctx.fillRect(32, 28, 2, 2);
+        // Mouth
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black mouth
+        ctx.fillRect(22, 36, 8, 2); // Smile
+        // Hat
+        ctx.fillStyle = "rgb(255, 105, 180)"; // Pink hat
+        ctx.fillRect(22, 6, 8, 8); // Hat top
+        ctx.fillStyle = "rgb(255, 20, 147)"; // Deeper pink shading
+        ctx.fillRect(24, 8, 4, 4);
+
+      } else if (sprite.class === "sans_classic") { // Trickster (Sans)
+        // Outline
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black outline
+        ctx.fillRect(0, 0, 32, 52); // Larger outline box
+        ctx.fillRect(2, 2, 28, 48); // Inner outline
+        // Body
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White body
+        ctx.fillRect(4, 4, 24, 44); // Main body
+        ctx.fillStyle = "rgb(220, 220, 220)"; // Light gray shading
+        ctx.fillRect(6, 6, 20, 40);
+        // Eyes
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black eyes
+        ctx.fillRect(8, 12, 6, 6); ctx.fillRect(18, 12, 6, 6);
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White shine
+        ctx.fillRect(10, 14, 2, 2); ctx.fillRect(20, 14, 2, 2);
+        // Mouth
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black mouth
+        ctx.fillRect(10, 22, 12, 6); // Wide grin
+        // Shorts
+        ctx.fillStyle = "rgb(139, 69, 19)"; // Brown shorts
+        ctx.fillRect(8, 32, 16, 16);
+        ctx.fillStyle = "rgb(165, 42, 42)"; // Darker brown shading
+        ctx.fillRect(10, 34, 12, 12);
+        // Slippers
+        ctx.fillStyle = "rgb(255, 192, 203)"; // Pink slippers
+        ctx.fillRect(8, 48, 8, 8); ctx.fillRect(16, 48, 8, 8);
+        ctx.fillStyle = "rgb(255, 105, 180)"; // Darker pink shading
+        ctx.fillRect(10, 50, 4, 4); ctx.fillRect(18, 50, 4, 4);
+        // Bone
+        ctx.fillStyle = "rgb(255, 215, 0)"; // Yellow bone
+        ctx.fillRect(24, 40, 8, 8); // Bone top
+        ctx.fillStyle = "rgb(255, 165, 0)"; // Darker yellow shading
+        ctx.fillRect(26, 42, 4, 4);
+
+      } else if (sprite.class === "sans_blue") { // Guardian (Blue Sans)
+        // Outline
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black outline
+        ctx.fillRect(0, 0, 42, 62); // Larger outline box
+        ctx.fillRect(2, 2, 38, 58); // Inner outline
+        // Jacket
+        ctx.fillStyle = "rgb(135, 206, 235)"; // Light blue jacket
+        ctx.fillRect(4, 4, 34, 50); // Main jacket
+        ctx.fillStyle = "rgb(100, 149, 237)"; // Deeper blue shading
+        ctx.fillRect(6, 6, 30, 46);
+        // Shirt
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White shirt
+        ctx.fillRect(10, 14, 20, 20); // Shirt area
+        ctx.fillStyle = "rgb(240, 240, 240)"; // Light gray shading
+        ctx.fillRect(12, 16, 16, 16);
+        // Eye
+        ctx.fillStyle = "rgb(0, 0, 255)"; // Blue eye
+        ctx.fillRect(14, 6, 12, 12); // Single eye
+        ctx.fillStyle = "rgb(0, 0, 128)"; // Darker blue shading
+        ctx.fillRect(16, 8, 8, 8);
+        // Mouth
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black mouth
+        ctx.fillRect(16, 22, 10, 6); // Wide grin
+        // Shoes
+        ctx.fillStyle = "rgb(255, 182, 193)"; // Pink shoes
+        ctx.fillRect(12, 54, 8, 8); ctx.fillRect(22, 54, 8, 8);
+        ctx.fillStyle = "rgb(255, 105, 180)"; // Darker pink shading
+        ctx.fillRect(14, 56, 4, 4); ctx.fillRect(24, 56, 4, 4);
+        // Glow
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White glow
+        ctx.fillRect(6, 6, 8, 8); // Top-left glow
+        ctx.fillStyle = "rgb(240, 240, 240)"; // Light gray shading
+        ctx.fillRect(8, 8, 4, 4);
+
+      } else if (sprite.class === "treasure") {
+        ctx.fillStyle = "rgb(255, 215, 0)"; // Gold
+        ctx.fillRect(0, 0, 40, 40);
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White shine
+        ctx.fillRect(5, 5, 10, 10);
+      } else if (sprite.class === "scroll") {
+        ctx.fillStyle = "rgb(255, 255, 200)"; // Creamy white
+        ctx.fillRect(0, 0, 30, 20);
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black lines
+        ctx.fillRect(5, 5, 20, 2);
+      } else if (sprite.class === "bone") {
+        ctx.fillStyle = "rgb(255, 215, 0)"; // Yellow bone
+        ctx.fillRect(0, 0, 20, 20);
+        ctx.fillStyle = "rgb(0, 0, 0)"; // Black center
+        ctx.fillRect(5, 5, 10, 10);
+      } else if (sprite.class === "dagger") {
+        ctx.fillStyle = "rgb(169, 169, 169)"; // Silver
+        ctx.fillRect(0, 0, 10, 30);
+        ctx.fillStyle = "rgb(139, 69, 19)"; // Brown handle
+        ctx.fillRect(2, 30, 6, 10);
+      } else if (sprite.class === "relic") {
+        ctx.fillStyle = "rgb(128, 0, 128)"; // Purple
+        ctx.fillRect(0, 0, 20, 20);
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White gem
+        ctx.fillRect(5, 5, 10, 10);
+      } else if (sprite.class === "statue") {
+        ctx.fillStyle = "rgb(192, 192, 192)"; // Silver
+        ctx.fillRect(0, 0, 40, 40);
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White shine
+        ctx.fillRect(5, 5, 10, 10);
+      } else if (sprite.class === "trap") {
+        ctx.fillStyle = "rgb(128, 128, 128)"; // Gray
+        ctx.fillRect(0, 0, 60, 20);
+        ctx.fillStyle = "rgb(255, 255, 255)"; // White tips
+        ctx.fillRect(10, 0, 10, 5); ctx.fillRect(30, 0, 10, 5);
+      }
+      ctx.fillStyle = "white";
+      ctx.font = "12px Arial";
+      ctx.fillText(sprite.name, 0, -10);
+      ctx.restore();
+    }
+
+    function displayScene(sceneKey) {
+      const scene = storyData[sceneKey];
+      document.getElementById("story").innerText = scene.text;
+      const choicesDiv = document.getElementById("choices");
+      choicesDiv.innerHTML = "";
+      const canvas = document.createElement("canvas");
+      canvas.width = 600;
+      canvas.height = 400;
+      document.getElementById("gameCanvas").innerHTML = "";
+      document.getElementById("gameCanvas").appendChild(canvas);
+      const ctx = canvas.getContext("2d");
+
+      let frame = 0;
+      function animate() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        scene.sprites.forEach(sprite => drawSprite(ctx, sprite, frame));
+        frame++;
+        animationFrame = requestAnimationFrame(animate);
+      }
+      cancelAnimationFrame(animationFrame);
+      animate();
+
+      if (scene.choices.length === 0 || (scene.gameOver && playerState.trustPoints <= 0)) {
+        document.getElementById("restart").classList.remove("hidden");
+      } else {
+        scene.choices.forEach(choice => {
+          if (!choice.condition || (choice.condition.inventory && playerState.inventory.includes(choice.condition.inventory)) || (choice.condition.health)) {
+            const button = document.createElement("button");
+            button.innerText = choice.text;
+            button.classList.add("bg-blue-600", "hover:bg-blue-700", "text-white", "font-bold", "py-2", "px-4", "rounded");
+            button.onclick = () => {
+              if (choice.effect) {
+                if (choice.effect.trustPoints) playerState.trustPoints = Math.min(3, Math.max(0, playerState.trustPoints + choice.effect.trustPoints));
+                if (choice.effect.inventory) {
+                  if (Array.isArray(choice.effect.inventory)) {
+                    choice.effect.inventory.forEach(item => {
+                      if (item.startsWith("-")) playerState.inventory = playerState.inventory.filter(i => i !== item.slice(1));
+                      else playerState.inventory.push(item);
+                    });
+                  } else if (choice.effect.inventory.startsWith("-")) {
+                    playerState.inventory = playerState.inventory.filter(i => i !== choice.effect.inventory.slice(1));
+                  } else {
+                    playerState.inventory.push(choice.effect.inventory);
+                  }
+                }
+              }
+              displayScene(choice.next);
+            };
+            choicesDiv.appendChild(button);
+          }
+        });
+      }
+    }
+
+    function showInventory() {
+      const inventoryScreen = document.getElementById("inventoryScreen");
+      inventoryScreen.style.display = "block";
+      inventoryScreen.innerHTML = "<h2 class='text-xl font-bold mb-2'>Inventory</h2>";
+      playerState.inventory.forEach(item => {
+        const itemDiv = document.createElement("div");
+        itemDiv.className = "item";
+        const canvas = document.createElement("canvas");
+        canvas.width = 40;
+        canvas.height = 40;
+        const ctx = canvas.getContext("2d");
+        drawSprite(ctx, { class: inventoryItems[item].sprite, x: 0, y: 0, name: "" }, 0);
+        itemDiv.appendChild(canvas);
+        itemDiv.innerHTML += `<span class='ml-2'>${item}: ${inventoryItems[item].description}</span>`;
+        inventoryScreen.appendChild(itemDiv);
+      });
+      inventoryScreen.innerHTML += `<p>Trust Points: ${playerState.trustPoints}</p>`;
+      document.getElementById("inventoryButton").innerText = "Hide Inventory";
+      document.getElementById("inventoryButton").onclick = hideInventory;
+    }
+
+    function hideInventory() {
+      document.getElementById("inventoryScreen").style.display = "none";
+      document.getElementById("inventoryButton").innerText = "View Inventory";
+      document.getElementById("inventoryButton").onclick = showInventory;
+    }
+
+    document.getElementById("inventoryButton").onclick = showInventory;
+    document.getElementById("restart").onclick = () => {
+      playerState = { inventory: [], trustPoints: 0 };
+      document.getElementById("restart").classList.add("hidden");
+      displayScene("start");
+    };
+
+    displayScene("start");
+  </script>
+</body>
+</html>
